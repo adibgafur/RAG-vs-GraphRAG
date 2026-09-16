@@ -135,16 +135,27 @@ def make_llm_fn(provider: str, api_key: str, model_name: str = None):
     """Return a simple llm_fn(prompt) -> str for use during ingestion (summaries)."""
     def llm_fn(prompt: str) -> str:
         if provider == "groq":
-            from groq import Groq
+            from groq import Groq, BadRequestError, PermissionDeniedError
             client = Groq(api_key=api_key)
             target_model = model_name or st.session_state.get("groq_model", "openai/gpt-oss-120b")
-            resp   = client.chat.completions.create(
-                model=target_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=256,
-                temperature=0.3,
-            )
-            return resp.choices[0].message.content
+            try:
+                resp = client.chat.completions.create(
+                    model=target_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=256,
+                    temperature=0.3,
+                )
+                return resp.choices[0].message.content
+            except Exception:
+                fallback_model = "openai/gpt-oss-120b"
+                st.session_state["groq_model"] = fallback_model
+                resp = client.chat.completions.create(
+                    model=fallback_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=256,
+                    temperature=0.3,
+                )
+                return resp.choices[0].message.content
         else:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
@@ -192,13 +203,25 @@ RETRIEVED CONTEXT (Knowledge Graph enhanced):
         from groq import Groq
         client = Groq(api_key=api_key)
         target_model = model_name or st.session_state.get("groq_model", "openai/gpt-oss-120b")
-        resp   = client.chat.completions.create(
-            model=target_model,
-            messages=[{"role": "system", "content": system_prompt}] + full_messages,
-            max_tokens=1024,
-            temperature=0.3,
-        )
-        return resp.choices[0].message.content
+        try:
+            resp = client.chat.completions.create(
+                model=target_model,
+                messages=[{"role": "system", "content": system_prompt}] + full_messages,
+                max_tokens=1024,
+                temperature=0.3,
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            fallback_model = "openai/gpt-oss-120b" if target_model != "openai/gpt-oss-120b" else "qwen/qwen3.8-27b"
+            st.warning(f"⚠️ Model '{target_model}' was unavailable/blocked. Automatically falling back to '{fallback_model}'.")
+            st.session_state["groq_model"] = fallback_model
+            resp = client.chat.completions.create(
+                model=fallback_model,
+                messages=[{"role": "system", "content": system_prompt}] + full_messages,
+                max_tokens=1024,
+                temperature=0.3,
+            )
+            return resp.choices[0].message.content
     else:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
