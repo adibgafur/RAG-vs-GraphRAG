@@ -115,16 +115,16 @@ def init_state():
         "query_mode":        "hybrid",
         "api_key":           os.getenv("OPENAI_API_KEY", "") or os.getenv("GROQ_API_KEY", ""),
         "provider":          "groq",
-        "groq_model":        "llama-3.1-8b-instant",
+        "groq_model":        "openai/gpt-oss-120b",
         "openai_model":      "gpt-4o-mini",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    decommissioned = {"llama3-70b-8192", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-70b"}
+    decommissioned = {"llama3-70b-8192", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-70b", "llama-3.1-8b-instant", "llama-3.3-70b-specdec"}
     if st.session_state.get("groq_model") in decommissioned:
-        st.session_state["groq_model"] = "llama-3.1-8b-instant"
+        st.session_state["groq_model"] = "openai/gpt-oss-120b"
 
 init_state()
 
@@ -137,7 +137,7 @@ def make_llm_fn(provider: str, api_key: str, model_name: str = None):
         if provider == "groq":
             from groq import Groq
             client = Groq(api_key=api_key)
-            target_model = model_name or st.session_state.get("groq_model", "llama-3.1-8b-instant")
+            target_model = model_name or st.session_state.get("groq_model", "openai/gpt-oss-120b")
             resp   = client.chat.completions.create(
                 model=target_model,
                 messages=[{"role": "user", "content": prompt}],
@@ -191,7 +191,7 @@ RETRIEVED CONTEXT (Knowledge Graph enhanced):
     if provider == "groq":
         from groq import Groq
         client = Groq(api_key=api_key)
-        target_model = model_name or st.session_state.get("groq_model", "llama-3.1-8b-instant")
+        target_model = model_name or st.session_state.get("groq_model", "openai/gpt-oss-120b")
         resp   = client.chat.completions.create(
             model=target_model,
             messages=[{"role": "system", "content": system_prompt}] + full_messages,
@@ -224,7 +224,15 @@ with st.sidebar:
     )
 
     if st.session_state.provider == "groq":
-        groq_options = ["llama-3.1-8b-instant", "llama-3.3-70b-specdec", "mixtral-8x7b-32768", "gemma2-9b-it", "Custom..."]
+        groq_options = [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+            "groq/compound",
+            "groq/compound-mini",
+            "allam-2-7b",
+            "Custom..."
+        ]
         curr_g = st.session_state.groq_model
         default_idx = groq_options.index(curr_g) if curr_g in groq_options else 0
         sel_groq = st.selectbox("Groq Model", groq_options, index=default_idx)
