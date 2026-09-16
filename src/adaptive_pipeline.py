@@ -288,6 +288,41 @@ class AdaptiveGraphRAG:
         self._ingested_sources[source_name] = stats
         return stats
 
+    def ingest(self, file_path: str, llm_fn: Optional[Callable] = None) -> dict:
+        """Parse .srt or .txt file and ingest chunks into AdaptiveGraphRAG."""
+        if llm_fn:
+            self.llm_fn = llm_fn
+            self.relation_extractor.llm_fn = llm_fn
+            self.query_classifier.llm_fn = llm_fn
+
+        source_name = Path(file_path).stem
+        if str(file_path).endswith(".srt"):
+            return self.ingest_srt(file_path)
+
+        path = Path(file_path)
+        content = path.read_text(encoding="utf-8", errors="replace")
+        words = content.split()
+        chunk_size_words, overlap_words = 300, 50
+        chunks = []
+        chunk_id = 0
+        for i in range(0, len(words), chunk_size_words - overlap_words):
+            chunk_words = words[i:i + chunk_size_words]
+            if not chunk_words:
+                break
+            chunk_text = " ".join(chunk_words)
+            chunks.append(TextChunk(
+                chunk_id=chunk_id,
+                text=chunk_text,
+                start_time="00:00:00",
+                end_time="00:00:00",
+                char_start=0,
+                char_end=len(chunk_text),
+                source=source_name,
+                token_count=len(chunk_words),
+            ))
+            chunk_id += 1
+        return self.ingest_chunks(chunks, source_name=source_name)
+
     def ingest_srt(self, file_path: str) -> dict:
         """Parse SRT file and ingest chunks into AdaptiveGraphRAG."""
         if not _HAS_GRAPHRAG_BASE:

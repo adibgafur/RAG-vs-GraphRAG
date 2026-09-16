@@ -312,14 +312,27 @@ with st.sidebar:
 
         if st.button(btn_label, use_container_width=True, type="primary", disabled=not pending):
             if st.session_state.rag is None:
-                from graph_pipeline import GraphRAG
-                st.session_state.rag = GraphRAG(
-                    persist_dir="./graph_store",
-                    chunk_size=chunk_size,
-                    overlap=overlap,
-                    top_k_retrieve=top_k,
-                    top_n_rerank=top_n
-                )
+                try:
+                    import sys
+                    from pathlib import Path
+                    root_dir = Path(__file__).resolve().parent.parent
+                    if str(root_dir) not in sys.path:
+                        sys.path.insert(0, str(root_dir))
+                    from src.adaptive_pipeline import AdaptiveGraphRAG
+                    st.session_state.rag = AdaptiveGraphRAG(
+                        persist_dir="./graph_store",
+                        top_k_retrieve=top_k,
+                        top_n_rerank=top_n
+                    )
+                except Exception:
+                    from graph_pipeline import GraphRAG
+                    st.session_state.rag = GraphRAG(
+                        persist_dir="./graph_store",
+                        chunk_size=chunk_size,
+                        overlap=overlap,
+                        top_k_retrieve=top_k,
+                        top_n_rerank=top_n
+                    )
 
             llm_fn = None
             if generate_summaries_on_ingest and st.session_state.api_key:
@@ -461,8 +474,10 @@ else:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-
                 if msg["role"] == "assistant":
+                    if msg.get("reasoning_path_html"):
+                        st.markdown(msg["reasoning_path_html"], unsafe_allow_html=True)
+
                     if msg.get("mode"):
                         mode_css = f"mode-{msg['mode'].split('_')[0]}"
                         st.markdown(f'<span class="{mode_css}">Mode: {msg["mode"]}</span>', unsafe_allow_html=True)
@@ -538,6 +553,10 @@ else:
                                 st.session_state.api_key
                             )
 
+                        reasoning_html = result.get("reasoning_path_html")
+                        if reasoning_html:
+                            st.markdown(reasoning_html, unsafe_allow_html=True)
+
                         st.markdown(answer)
 
                         mode_css = f"mode-{actual_mode.split('_')[0]}"
@@ -566,12 +585,13 @@ else:
                                 )
 
                         st.session_state.messages.append({
-                            "role":      "assistant",
-                            "content":   answer,
-                            "mode":      actual_mode,
-                            "summaries": summaries,
-                            "entities":  entities,
-                            "hits":      hits
+                            "role":                "assistant",
+                            "content":             answer,
+                            "mode":                actual_mode,
+                            "reasoning_path_html": reasoning_html,
+                            "summaries":           summaries,
+                            "entities":            entities,
+                            "hits":                hits
                         })
 
                     except Exception as e:
