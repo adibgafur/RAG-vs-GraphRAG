@@ -180,6 +180,16 @@ class RelationExtractor:
                     if name not in seen:
                         seen.add(name)
                         entities.append(name)
+
+        # Also capture Proper Noun matches (e.g., NVIDIA, GPT-4) missed by small NER model
+        prop_matches = re.findall(r"\b[A-Z][a-zA-Z0-9_-]+(?:\s+[A-Z][a-zA-Z0-9_-]+)*\b", text)
+        for m in prop_matches:
+            name = m.strip().lower()
+            if len(name) > 2 and not re.match(r"^\d+[\d\s,\.]*$", name):
+                if name not in seen:
+                    seen.add(name)
+                    entities.append(name)
+
         return entities
 
     def extract_batch(
