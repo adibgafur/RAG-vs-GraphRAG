@@ -124,7 +124,7 @@ This project implements and compares three RAG architectures of increasing sophi
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/sjsoumil/RAG-vs-GraphRAG.git
+git clone https://github.com/adibgafur/RAG-vs-GraphRAG.git
 cd RAG-vs-GraphRAG
 ```
 
