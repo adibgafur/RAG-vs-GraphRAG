@@ -122,6 +122,10 @@ def init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 
+    decommissioned = {"llama3-70b-8192", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-70b"}
+    if st.session_state.get("groq_model") in decommissioned:
+        st.session_state["groq_model"] = "llama-3.1-8b-instant"
+
 init_state()
 
 
