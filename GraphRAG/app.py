@@ -107,14 +107,16 @@ st.markdown("""
 
 def init_state():
     defaults = {
-        "messages":       [],
-        "rag":            None,
-        "ingested":       False,
+        "messages":          [],
+        "rag":               None,
+        "ingested":          False,
         "ingest_stats_list": [],
-        "active_sources": [],
-        "query_mode":     "hybrid",
-        "api_key":        os.getenv("OPENAI_API_KEY", "") or os.getenv("GROQ_API_KEY", ""),
-        "provider":       "openai",
+        "active_sources":    [],
+        "query_mode":        "hybrid",
+        "api_key":           os.getenv("OPENAI_API_KEY", "") or os.getenv("GROQ_API_KEY", ""),
+        "provider":          "groq",
+        "groq_model":        "llama-3.1-8b-instant",
+        "openai_model":      "gpt-4o-mini",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -125,14 +127,15 @@ init_state()
 
 # ─── LLM helpers ──────────────────────────────────────────────────────────────
 
-def make_llm_fn(provider: str, api_key: str):
+def make_llm_fn(provider: str, api_key: str, model_name: str = None):
     """Return a simple llm_fn(prompt) -> str for use during ingestion (summaries)."""
     def llm_fn(prompt: str) -> str:
         if provider == "groq":
             from groq import Groq
             client = Groq(api_key=api_key)
+            target_model = model_name or st.session_state.get("groq_model", "llama-3.1-8b-instant")
             resp   = client.chat.completions.create(
-                model="llama3-70b-8192",
+                model=target_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=256,
                 temperature=0.3,
@@ -141,8 +144,9 @@ def make_llm_fn(provider: str, api_key: str):
         else:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
+            target_model = model_name or st.session_state.get("openai_model", "gpt-4o-mini")
             resp   = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=target_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=256,
                 temperature=0.3,
@@ -151,7 +155,7 @@ def make_llm_fn(provider: str, api_key: str):
     return llm_fn
 
 
-def call_llm(messages: list, context: str, mode: str, provider: str, api_key: str) -> str:
+def call_llm(messages: list, context: str, mode: str, provider: str, api_key: str, model_name: str = None) -> str:
     active_sources = st.session_state.get("active_sources", [])
     source_list    = ", ".join(active_sources) if active_sources else "unknown"
 
@@ -183,8 +187,9 @@ RETRIEVED CONTEXT (Knowledge Graph enhanced):
     if provider == "groq":
         from groq import Groq
         client = Groq(api_key=api_key)
+        target_model = model_name or st.session_state.get("groq_model", "llama-3.1-8b-instant")
         resp   = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model=target_model,
             messages=[{"role": "system", "content": system_prompt}] + full_messages,
             max_tokens=1024,
             temperature=0.3,
@@ -193,8 +198,9 @@ RETRIEVED CONTEXT (Knowledge Graph enhanced):
     else:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
+        target_model = model_name or st.session_state.get("openai_model", "gpt-4o-mini")
         resp   = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=target_model,
             messages=[{"role": "system", "content": system_prompt}] + full_messages,
             max_tokens=1024,
             temperature=0.3,
@@ -209,11 +215,25 @@ with st.sidebar:
 
     st.session_state.provider = st.selectbox(
         "LLM Provider",
-        ["openai", "groq"],
-        index=0 if st.session_state.provider == "openai" else 1,
+        ["groq", "openai"],
+        index=0 if st.session_state.provider == "groq" else 1,
     )
 
-    api_key_label = "OpenAI API Key" if st.session_state.provider == "openai" else "Groq API Key"
+    if st.session_state.provider == "groq":
+        groq_options = ["llama-3.1-8b-instant", "llama-3.3-70b-specdec", "mixtral-8x7b-32768", "gemma2-9b-it", "Custom..."]
+        curr_g = st.session_state.groq_model
+        default_idx = groq_options.index(curr_g) if curr_g in groq_options else 0
+        sel_groq = st.selectbox("Groq Model", groq_options, index=default_idx)
+        if sel_groq == "Custom...":
+            custom_m = st.text_input("Custom Model ID", value=st.session_state.groq_model)
+            if custom_m:
+                st.session_state.groq_model = custom_m
+        else:
+            st.session_state.groq_model = sel_groq
+    else:
+        st.session_state.openai_model = st.text_input("OpenAI Model", value=st.session_state.openai_model)
+
+    api_key_label = "Groq API Key" if st.session_state.provider == "groq" else "OpenAI API Key"
     api_key_input = st.text_input(
         api_key_label, value=st.session_state.api_key,
         type="password", placeholder="Enter your API key..."
