@@ -108,25 +108,45 @@ def parse_timestamped_transcript(file_path: str, chunk_size_words: int = 250) ->
 
 
 def main():
-    transcript_path = r"C:\Users\Adib Gafur\Desktop\Andrew_Huberman_Raj_Shamani_Transcript.txt"
+    import argparse
+    parser = argparse.ArgumentParser(description="Adaptive Multi-Hop GraphRAG Demo")
+    parser.add_argument("--transcript", type=str, default=None, help="Path to transcript file (.txt or .srt)")
+    parser.add_argument("--query", type=str, default=None, help="Query to run against the pipeline")
+    args = parser.parse_args()
+
+    if not args.transcript:
+        # Check if any .txt or .srt files exist in current directory
+        local_files = [f for f in os.listdir(".") if f.endswith((".txt", ".srt")) and not f.startswith(".")]
+        if local_files:
+            transcript_path = local_files[0]
+            print(f"[INFO] No --transcript argument supplied. Defaulting to local file: {transcript_path}")
+        else:
+            print("[USAGE] Please specify a transcript file:")
+            print("  python run_demo.py --transcript path/to/transcript.txt")
+            print("  python run_demo.py --transcript path/to/transcript.txt --query \"What are the main topics?\"")
+            return
+    else:
+        transcript_path = args.transcript
 
     print(f"[INFO] Parsing transcript from: {transcript_path}")
     chunks = parse_timestamped_transcript(transcript_path)
     print(f"[INFO] Created {len(chunks)} text chunks.")
 
     # Initialize RAG system
-    rag = AdaptiveGraphRAG(persist_dir="./huberman_graph_store")
+    rag = AdaptiveGraphRAG(persist_dir="./graph_store")
 
     # Ingest chunks
-    stats = rag.ingest_chunks(chunks, source_name="Andrew_Huberman_Raj_Shamani")
+    source_name = Path(transcript_path).stem
+    stats = rag.ingest_chunks(chunks, source_name=source_name)
     print(f"[INFO] Ingest stats: {stats}")
 
-    # Sample queries
-    sample_queries = [
-        "How can someone turn off their mind and fall asleep faster according to Andrew Huberman?",
-        "What does Huberman say about morning cortisol and sunlight?",
-        "How does Huberman describe building courage and stress resilience?",
-    ]
+    if args.query:
+        sample_queries = [args.query]
+    else:
+        sample_queries = [
+            "What are the main topics and key insights discussed in this transcript?",
+            "What core ideas or recommendations does the speaker emphasize?",
+        ]
 
     for q in sample_queries:
         print("\n" + "=" * 80)
