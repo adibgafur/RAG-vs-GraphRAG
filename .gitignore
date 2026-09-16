@@ -6,6 +6,9 @@
 rag_store/
 graph_store/
 eval_store/
+huberman_graph_store/
+vector_db/
+*.pkl
 
 # Python
 __pycache__/

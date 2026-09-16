@@ -82,6 +82,51 @@ def parse_srt(file_path: str) -> List[SRTBlock]:
     return blocks
 
 
+def parse_plain_text(file_path: str) -> List[SRTBlock]:
+    """Parse plain text or timestamped transcript files (e.g. [00:00:00] text...)."""
+    content = Path(file_path).read_text(encoding="utf-8", errors="replace")
+    lines = content.strip().splitlines()
+    blocks = []
+    # Pattern: [HH:MM:SS] text   or   [MM:SS] text
+    ts_pattern = re.compile(r"^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*)")
+    idx = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        m = ts_pattern.match(line)
+        if m:
+            ts_raw = m.group(1)
+            text = m.group(2).strip()
+            # Normalize to HH:MM:SS.000
+            parts = ts_raw.split(":")
+            if len(parts) == 2:
+                ts_str = f"00:{parts[0]}:{parts[1]}.000"
+            else:
+                ts_str = f"{parts[0]}:{parts[1]}:{parts[2]}.000"
+            if text and len(text) >= 3:
+                blocks.append(SRTBlock(index=idx, start_time=ts_str, end_time=ts_str, text=text))
+                idx += 1
+        else:
+            # Plain text line with no timestamp
+            if len(line) >= 3:
+                blocks.append(SRTBlock(index=idx, start_time="00:00:00.000", end_time="00:00:00.000", text=line))
+                idx += 1
+    return blocks
+
+
+def parse_file(file_path: str) -> List[SRTBlock]:
+    """Auto-detect file format: try SRT first, fall back to plain text."""
+    blocks = parse_srt(file_path)
+    if blocks:
+        return blocks
+    # SRT parser returned nothing -- treat as plain text / timestamped transcript
+    blocks = parse_plain_text(file_path)
+    if blocks:
+        print(f"[INFO] Parsed as plain text/transcript ({len(blocks)} lines)")
+    return blocks
+
+
 def clean_srt_blocks(blocks: List[SRTBlock]) -> List[SRTBlock]:
     patterns = [r"\(Transcribed by.*?\)", r"\[.*?\]", r"♪.*?♪", r"<[^>]+>"]
     cleaned  = []
@@ -172,14 +217,44 @@ def chunk_segments(segments: list, chunk_size=500, overlap=80, source_name="podc
     return chunks
 
 
-# ─── Vector Store ─────────────────────────────────────────────────────────────
+# ─── Vector Store (numpy-based, no C++ build tools needed) ────────────────────
 
 class VectorStore:
-    def __init__(self, persist_dir: str = "./chroma_db", collection_name: str = "graphrag"):
-        import chromadb
-        self.client          = chromadb.PersistentClient(path=persist_dir)
+    """In-memory vector store backed by numpy cosine similarity and pickle persistence."""
+
+    def __init__(self, persist_dir: str = "./vector_db", collection_name: str = "graphrag"):
+        import os, pickle, numpy as np
+        self.persist_dir     = persist_dir
         self.collection_name = collection_name
         self._embedder       = None
+        self._np             = np
+        self._pickle         = pickle
+        os.makedirs(persist_dir, exist_ok=True)
+
+        # Internal storage
+        self._store_path = os.path.join(persist_dir, f"{collection_name}.pkl")
+        if os.path.exists(self._store_path):
+            with open(self._store_path, "rb") as f:
+                data = pickle.load(f)
+            self._ids        = data["ids"]
+            self._embeddings = data["embeddings"]  # np.ndarray (N, D)
+            self._documents  = data["documents"]
+            self._metadatas  = data["metadatas"]
+            print(f"Loaded {len(self._ids)} vectors from disk.")
+        else:
+            self._ids        = []
+            self._embeddings = None  # will become np.ndarray after first index
+            self._documents  = []
+            self._metadatas  = []
+
+    def _save(self):
+        with open(self._store_path, "wb") as f:
+            self._pickle.dump({
+                "ids": self._ids,
+                "embeddings": self._embeddings,
+                "documents": self._documents,
+                "metadatas": self._metadatas,
+            }, f)
 
     def _get_embedder(self):
         if self._embedder is None:
@@ -205,56 +280,48 @@ class VectorStore:
     def index_chunks(self, chunks: List[TextChunk], source_id: str):
         if not chunks:
             return None
-        try:
-            existing = self.client.get_collection(self.collection_name)
-            results  = existing.get(where={"source": {"$eq": chunks[0].source}}, limit=1)
-            if results["ids"]:
-                print(f"Source '{source_id}' already in ChromaDB. Skipping embedding.")
-                return existing
-        except Exception:
-            pass
-
-        collection = self.client.get_or_create_collection(
-            name=self.collection_name, metadata={"hnsw:space": "cosine"}
-        )
+        # Check if source already indexed
+        if self._ids:
+            src_val = chunks[0].source
+            for m in self._metadatas:
+                if m.get("source") == src_val:
+                    print(f"Source '{source_id}' already indexed. Skipping embedding.")
+                    return self
         texts      = [c.text for c in chunks]
         print(f"Embedding {len(texts)} chunks for '{source_id}'...")
         embeddings = self.embed_texts(texts)
+        np = self._np
+        new_emb    = np.array(embeddings, dtype=np.float32)
         ids        = [f"{source_id}_chunk_{c.chunk_id}" for c in chunks]
         metadatas  = [{
             "source": c.source, "chunk_id": c.chunk_id,
             "start_time": c.start_time, "end_time": c.end_time,
             "token_count": c.token_count
         } for c in chunks]
-        for i in range(0, len(chunks), 100):
-            collection.upsert(
-                ids=ids[i:i+100], embeddings=embeddings[i:i+100],
-                documents=texts[i:i+100], metadatas=metadatas[i:i+100]
-            )
-        print(f"✅ Indexed {len(chunks)} chunks.")
-        return collection
+
+        if self._embeddings is not None and len(self._embeddings) > 0:
+            self._embeddings = np.vstack([self._embeddings, new_emb])
+        else:
+            self._embeddings = new_emb
+        self._ids.extend(ids)
+        self._documents.extend(texts)
+        self._metadatas.extend(metadatas)
+        self._save()
+        print(f"[INDEX] Indexed {len(chunks)} chunks.")
+        return self
 
     def dense_search(self, query: str, top_k: int = 20) -> List[Tuple[str, dict, float]]:
-        try:
-            collection = self.client.get_collection(self.collection_name)
-        except Exception:
+        if self._embeddings is None or len(self._ids) == 0:
             return []
-        count = collection.count()
-        if count == 0:
-            return []
-        query_emb = self.embed_query(query)
-        results   = collection.query(
-            query_embeddings=[query_emb],
-            n_results=min(top_k, count),
-            include=["documents", "metadatas", "distances"]
-        )
+        np = self._np
+        query_emb = np.array(self.embed_query(query), dtype=np.float32)
+        # Cosine similarity (embeddings are already L2-normalized)
+        scores = self._embeddings @ query_emb
+        k = min(top_k, len(self._ids))
+        top_indices = np.argsort(scores)[::-1][:k]
         return [
-            (doc, meta, 1.0 - dist)
-            for doc, meta, dist in zip(
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0]
-            )
+            (self._documents[i], self._metadatas[i], float(scores[i]))
+            for i in top_indices
         ]
 
 
@@ -353,7 +420,7 @@ class GraphRAG:
         self.top_k_retrieve = top_k_retrieve
         self.top_n_rerank   = top_n_rerank
 
-        print(f"📐 GraphRAG config → chunk_size={chunk_size}, overlap={overlap}, "
+        print(f"[CONFIG] GraphRAG config -> chunk_size={chunk_size}, overlap={overlap}, "
               f"top_k={top_k_retrieve}, top_n={top_n_rerank}")
 
         self.vector_store = VectorStore(
@@ -380,7 +447,7 @@ class GraphRAG:
             try:
                 import spacy
                 self._nlp = spacy.load("en_core_web_sm")
-                print("✅ spaCy en_core_web_sm loaded.")
+                print("[INFO] spaCy en_core_web_sm loaded.")
             except OSError:
                 raise RuntimeError(
                     "spaCy model missing. Run: python -m spacy download en_core_web_sm"
@@ -416,19 +483,19 @@ class GraphRAG:
         source_name = Path(file_path).stem
 
         if source_name in self._ingested_sources:
-            print(f"⏭️  '{source_name}' already loaded this session.")
+            print(f"[SKIP] '{source_name}' already loaded this session.")
             return {**self._ingested_sources[source_name], "already_loaded": True}
 
         chunks_path = self.persist_dir / f"{self._hash(source_name)}_chunks.json"
         stats: dict = {"source": source_name}
 
         if chunks_path.exists():
-            print(f"📦 Loading cached chunks for: {source_name}")
+            print(f"[CACHE] Loading cached chunks for: {source_name}")
             source_chunks = self._load_source_chunks(chunks_path)
             stats["cached"] = True
         else:
-            print(f"⚙️  Processing: {source_name}")
-            blocks = parse_srt(file_path)
+            print(f"[INGEST] Processing: {source_name}")
+            blocks = parse_file(file_path)
             stats["raw_blocks"]   = len(blocks)
             blocks = clean_srt_blocks(blocks)
             stats["clean_blocks"] = len(blocks)
@@ -444,19 +511,19 @@ class GraphRAG:
         self._ingested_sources[source_name] = stats
 
         # Rebuild unified BM25
-        print(f"🔄 Rebuilding BM25 over {len(self._all_chunks)} total chunks…")
+        print(f"[BM25] Rebuilding BM25 over {len(self._all_chunks)} total chunks...")
         self.bm25_index.build(self._all_chunks)
 
         # Build / extend entity co-occurrence graph
-        print("🕸️  Extracting entities and building graph…")
+        print("[GRAPH] Extracting entities and building graph...")
         self._build_graph(source_chunks)
 
         # Detect communities across ALL graph components
-        print("🔍 Detecting communities…")
+        print("[GRAPH] Detecting communities...")
         self._detect_communities()
 
         if llm_fn:
-            print("📝 Generating community summaries…")
+            print("[SUMMARY] Generating community summaries...")
             self.generate_summaries(llm_fn)
 
         stats.update({
@@ -593,7 +660,7 @@ class GraphRAG:
             comm_data["summary"] = summary
             generated += 1
 
-        print(f"✅ Generated {generated} community summaries.")
+        print(f"[SUMMARY] Generated {generated} community summaries.")
         self._cache_summary_embeddings()
         # Persist updated state
         self.save_state()
@@ -842,7 +909,7 @@ class GraphRAG:
         path = self.persist_dir / "graph_state.pkl"
         with open(path, "wb") as f:
             pickle.dump(state, f)
-        print(f"✅ Graph state saved ({self.graph.number_of_nodes()} nodes, "
+        print(f"[SAVE] Graph state saved ({self.graph.number_of_nodes()} nodes, "
               f"{len(self._communities)} communities).")
 
     def load_state(self) -> bool:
@@ -869,13 +936,13 @@ class GraphRAG:
             if self.has_summaries():
                 self._cache_summary_embeddings()
 
-            print(f"✅ Graph state restored: {self.graph.number_of_nodes()} entities, "
+            print(f"[LOAD] Graph state restored: {self.graph.number_of_nodes()} entities, "
                   f"{len(self._ingested_sources)} sources, "
                   f"{len(self._communities)} communities.")
             return True
 
         except Exception as e:
-            print(f"⚠️  Could not restore graph state: {e}")
+            print(f"[WARN] Could not restore graph state: {e}")
             return False
 
     def _rebuild_chunks_from_cache(self):

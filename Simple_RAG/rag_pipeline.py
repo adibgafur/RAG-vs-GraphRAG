@@ -297,7 +297,7 @@ class VectorStore:
                 metadatas=metadatas[i:i+100]
             )
 
-        print(f"✅ Indexed {len(chunks)} chunks into ChromaDB.")
+        print(f"[INDEX] Indexed {len(chunks)} chunks into ChromaDB.")
         return collection
 
     def dense_search(self, query: str, top_k: int = 20) -> List[Tuple[str, dict, float]]:
@@ -342,7 +342,7 @@ class BM25Index:
         self.chunks   = list(chunks)
         tokenized     = [self._tok(c.text) for c in self.chunks]
         self.bm25     = BM25Okapi(tokenized)
-        print(f"✅ BM25 index built over {len(self.chunks)} chunks.")
+        print(f"[BM25] BM25 index built over {len(self.chunks)} chunks.")
 
     def _tok(self, text: str) -> List[str]:
         return re.sub(r"[^\w\s]", " ", text.lower()).split()
@@ -440,7 +440,7 @@ class PodcastRAG:
         self.top_k_retrieve = top_k_retrieve
         self.top_n_rerank   = top_n_rerank
 
-        print(f"📐 RAG config → chunk_size={chunk_size}, overlap={overlap}, "
+        print(f"[CONFIG] RAG config -> chunk_size={chunk_size}, overlap={overlap}, "
               f"top_k={top_k_retrieve}, top_n={top_n_rerank}")
 
         self.vector_store = VectorStore(persist_dir=str(self.persist_dir / "chroma"))
@@ -460,18 +460,18 @@ class PodcastRAG:
         source_name = Path(file_path).stem
 
         if source_name in self._ingested_sources:
-            print(f"⏭️  '{source_name}' already loaded this session.")
+            print(f"[SKIP] '{source_name}' already loaded this session.")
             return {**self._ingested_sources[source_name], "already_loaded": True}
 
         chunks_path = self.persist_dir / f"{self._hash(source_name)}_chunks.json"
         stats: dict = {"source": source_name}
 
         if chunks_path.exists():
-            print(f"📦 Loading cached chunks for: {source_name}")
+            print(f"[CACHE] Loading cached chunks for: {source_name}")
             source_chunks = self._load_source_chunks(chunks_path)
             stats["cached"] = True
         else:
-            print(f"⚙️  Processing: {source_name}")
+            print(f"[INGEST] Processing: {source_name}")
             blocks = parse_srt(file_path)
             stats["raw_blocks"]   = len(blocks)
             blocks = clean_srt_blocks(blocks)
@@ -488,7 +488,7 @@ class PodcastRAG:
         self._ingested_sources[source_name] = stats
 
         # Rebuild unified BM25 over ALL accumulated chunks
-        print(f"🔄 Rebuilding BM25 over {len(self._all_chunks)} total chunks "
+        print(f"[BM25] Rebuilding BM25 over {len(self._all_chunks)} total chunks "
               f"({len(self._ingested_sources)} source(s))...")
         self.bm25_index.build(self._all_chunks)
 
@@ -569,11 +569,11 @@ class PodcastRAG:
                 for v in self._ingested_sources.values():
                     v["total_sources"] = n
 
-            print(f"✅ Restored {len(self._ingested_sources)} source(s) from cache.")
+            print(f"[RESTORE] Restored {len(self._ingested_sources)} source(s) from cache.")
             return bool(self._ingested_sources)
 
         except Exception as e:
-            print(f"⚠️  Could not restore RAG state: {e}")
+            print(f"[WARN] Could not restore RAG state: {e}")
             return False
 
     # ── Helpers ────────────────────────────────────────────────────────────────
