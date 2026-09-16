@@ -448,6 +448,23 @@ class AdaptiveGraphRAG:
         self._community_ids_ordered = ids
         self._community_summary_embeddings = np.array(embs)
 
+    def has_summaries(self) -> bool:
+        """Return True if at least one community has a valid summary."""
+        return any(
+            cd.get("summary") and not str(cd.get("summary")).startswith("Single entity cluster")
+            for cd in self._communities.values()
+        )
+
+    def get_graph_stats(self) -> dict:
+        """Return graph statistics dictionary."""
+        return {
+            "num_nodes": self.graph.number_of_nodes(),
+            "num_edges": self.graph.number_of_edges(),
+            "num_communities": len(self._communities),
+            "num_chunks": len(self._all_chunks),
+            "num_sources": len(self._ingested_sources),
+        }
+
     # ── Query API ─────────────────────────────────────────────────────────────
 
     def query(
