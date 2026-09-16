@@ -198,7 +198,7 @@ def format_reasoning_path(path: ReasoningPath) -> str:
     ]
 
     for i, step in enumerate(path.steps, 1):
-        arrow = f"  {step.source_entity} ──[{step.relation}]──▶ {step.target_entity}"
+        arrow = f"  {step.source_entity} --[{step.relation}]--> {step.target_entity}"
         conf = f"  (confidence: {step.confidence:.2f}, hop: {step.hop_depth})"
         chunks = ""
         if step.supporting_chunk_ids:
