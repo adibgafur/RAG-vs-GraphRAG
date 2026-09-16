@@ -132,7 +132,7 @@ def make_llm_fn(provider: str, api_key: str):
             from groq import Groq
             client = Groq(api_key=api_key)
             resp   = client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
+                model="llama3-70b-8192",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=256,
                 temperature=0.3,
@@ -184,7 +184,7 @@ RETRIEVED CONTEXT (Knowledge Graph enhanced):
         from groq import Groq
         client = Groq(api_key=api_key)
         resp   = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama3-70b-8192",
             messages=[{"role": "system", "content": system_prompt}] + full_messages,
             max_tokens=1024,
             temperature=0.3,

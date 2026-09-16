@@ -110,7 +110,7 @@ TRANSCRIPT EXCERPTS:
         from groq import Groq
         client   = Groq(api_key=api_key)
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama3-70b-8192",
             messages=[{"role": "system", "content": system_prompt}] + full_messages,
             max_tokens=1024, temperature=0.3,
         )

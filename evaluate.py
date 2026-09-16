@@ -129,7 +129,7 @@ def call_llm(prompt: str, provider: str, api_key: str, max_tokens: int = 400) ->
     if provider == "groq":
         from groq import Groq
         resp = Groq(api_key=api_key).chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama3-70b-8192",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens, temperature=0.1,
         )
@@ -337,7 +337,7 @@ def score_with_ragas(samples: list, provider: str, api_key: str) -> dict:
     if provider == "groq":
         from langchain_groq import ChatGroq
         ragas_llm = LangchainLLMWrapper(
-            ChatGroq(model="llama-3.1-70b-versatile", api_key=api_key)
+            ChatGroq(model="llama3-70b-8192", api_key=api_key)
         )
     else:
         from langchain_openai import ChatOpenAI

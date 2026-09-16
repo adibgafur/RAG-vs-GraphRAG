@@ -257,7 +257,7 @@ See [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) for detailed instructions.
 | **NER** | spaCy `en_core_web_sm` |
 | **Graph Engine** | NetworkX |
 | **Community Detection** | Greedy modularity (NetworkX) |
-| **LLM** | OpenAI `gpt-4o-mini` · Groq `llama-3.1-70b` |
+| **LLM** | OpenAI `gpt-4o-mini` · Groq `llama3-70b-8192` |
 | **Evaluation** | RAGAS |
 | **UI** | Streamlit |
 
