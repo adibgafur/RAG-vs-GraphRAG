@@ -197,11 +197,14 @@ Three query modes:
 - **Hybrid** — Combines both strategies for comprehensive answers
 
 ### Adaptive GraphRAG (`src/`)
-The most advanced tier, adding:
-- **Query Classification** — Auto-detects if a question is factual, relational, thematic, or multi-hop
-- **Typed Relations** — Extracts semantic relationships (e.g., `WORKS_AT`, `FOUNDED`, `DISAGREES_WITH`) with weights and provenance
-- **Multi-Hop Retrieval** — Traverses 0–3 hops with relevance decay, adapting depth to query complexity
-- **Reasoning Paths** — Generates human-readable explanations of how the answer was derived
+The most advanced tier built to dynamically route and resolve complex multi-hop queries. It pushes beyond basic semantic retrieval by integrating a rich, typed knowledge graph with adaptive traversal algorithms. 
+
+Key features include:
+- **Query Classification (`QueryClassifier`)**: Intelligently analyzes user queries and categorizes them into `factual`, `relational`, `thematic`, or `multi_hop`. It automatically suggests the optimal graph traversal depth (0 to 3 hops) to prevent excessive hallucination and optimize latency.
+- **Typed Relations (`RelationExtractor`)**: Uses an LLM to extract highly specific, semantic relationships between entities (e.g., `WORKS_AT`, `FOUNDED`, `CAUSES`, `DISAGREES_WITH`). Each edge includes a confidence weight and precise provenance (linking back to the exact chunk and timestamp).
+- **Multi-Hop Retrieval (`MultiHopRetriever`)**: Dynamically traverses the typed knowledge graph. It applies a relevance decay factor (e.g., 0.7 per hop) to filter out noise, ensuring that only highly relevant distant entities are included in the expanded context.
+- **Reasoning Paths (`ReasoningPath`)**: For ultimate explainability, it generates human-readable reasoning traces. The LLM gets a clear chain of evidence (e.g., `Entity A -> [CAUSES] -> Entity B -> [AFFECTS] -> Entity C`), and this path is visualized in the Streamlit chat UI so users know exactly *how* their question was answered.
+- **Seamless UI Integration**: Integrated natively into the Streamlit app. It includes dynamic Knowledge Graph dashboards showcasing entity statistics, modular community clustering summaries, and interactive reasoning visualizations.
 
 ---
 

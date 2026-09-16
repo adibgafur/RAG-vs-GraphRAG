@@ -455,11 +455,44 @@ class AdaptiveGraphRAG:
             for cd in self._communities.values()
         )
 
+    def get_top_entities(self, n: int = 30) -> List[Tuple[str, int]]:
+        """Return the top n entities by mention count."""
+        ents = [(node, data.get("count", 0)) for node, data in self.graph.nodes(data=True)]
+        ents.sort(key=lambda x: x[1], reverse=True)
+        return ents[:n]
+
+    def get_community_list(self) -> List[dict]:
+        """Return a list of communities formatted for the UI."""
+        results = []
+        for cid, data in self._communities.items():
+            results.append({
+                "id": cid,
+                "size": len(data["entities"]),
+                "num_chunks": len(data["chunk_keys"]),
+                "top_entities": data["entities"][:10],
+                "summary": data.get("summary", "No summary available.")
+            })
+        return results
+
     def get_graph_stats(self) -> dict:
         """Return graph statistics dictionary."""
+        num_nodes = self.graph.number_of_nodes()
+        num_edges = self.graph.number_of_edges()
+        density = 0.0
+        if num_nodes > 1:
+            density = num_edges / (num_nodes * (num_nodes - 1))
+            
         return {
-            "num_nodes": self.graph.number_of_nodes(),
-            "num_edges": self.graph.number_of_edges(),
+            "nodes": num_nodes,
+            "edges": num_edges,
+            "communities": len(self._communities),
+            "density": f"{density:.4f}",
+            "chunks": len(self._all_chunks),
+            "sources": len(self._ingested_sources),
+            
+            # Keep original keys for compatibility
+            "num_nodes": num_nodes,
+            "num_edges": num_edges,
             "num_communities": len(self._communities),
             "num_chunks": len(self._all_chunks),
             "num_sources": len(self._ingested_sources),
@@ -686,13 +719,18 @@ class AdaptiveGraphRAG:
 
         return {"hits": self._dedup(hits), "community_ids": cids}
 
-    def format_context(
-        self,
-        hits: List[Tuple],
-        summaries: List[str],
-        reasoning_path: ReasoningPath,
-    ) -> str:
+    def format_context(self, *args, **kwargs) -> str:
         """Format final context payload for LLM answer generation."""
+        if len(args) == 1 and isinstance(args[0], dict):
+            res = args[0]
+            hits = res.get("hits", [])
+            summaries = res.get("summaries", [])
+            reasoning_path = res.get("reasoning_path")
+        else:
+            hits = kwargs.get("hits", args[0] if len(args) > 0 else [])
+            summaries = kwargs.get("summaries", args[1] if len(args) > 1 else [])
+            reasoning_path = kwargs.get("reasoning_path", args[2] if len(args) > 2 else None)
+
         parts = []
 
         # Summaries
